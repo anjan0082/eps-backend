@@ -1,6 +1,7 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
+const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
@@ -11,6 +12,9 @@ const supabase = createClient(
 
 app.use(cors());
 app.use(express.json());
+
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 
 // ============ HEALTH CHECK ============
 app.get('/health', (req, res) => {
@@ -26,7 +30,7 @@ app.get('/api/orders', async (req, res) => {
       .order('created_at', { ascending: false });
     
     if (error) throw error;
-    res.json(data);
+    res.json(data || []);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -59,6 +63,63 @@ app.post('/api/orders', async (req, res) => {
     
     if (error) throw error;
     res.status(201).json(data);
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ CREATE RAZORPAY ORDER ============
+app.post('/api/razorpay/create-order', async (req, res) => {
+  try {
+    const { amount, currency = 'INR', receipt } = req.body;
+
+    // Create Razorpay order
+    const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+    
+    const response = await axios.post(
+      'https://api.razorpay.com/v1/orders',
+      {
+        amount: Math.round(amount * 100), // Convert to paise
+        currency,
+        receipt,
+        payment_capture: 1 // Auto-capture
+      },
+      {
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Razorpay error:', error.response?.data || error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ VERIFY RAZORPAY PAYMENT ============
+app.post('/api/razorpay/verify', async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, order_id } = req.body;
+
+    // Update order payment status
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ 
+        payment_status: 'paid',
+        order_status: 'confirmed',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', order_id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -110,37 +171,6 @@ app.get('/api/analytics/dashboard', async (req, res) => {
     };
     
     res.json(analytics);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ============ RAZORPAY PAYMENT VERIFY ============
-app.post('/api/payment/verify', async (req, res) => {
-  try {
-    const { razorpay_payment_id, order_id } = req.body;
-    
-    const { data, error } = await supabase
-      .from('payments')
-      .insert([{
-        id: `pay_${Date.now()}`,
-        order_id: order_id,
-        razorpay_payment_id: razorpay_payment_id,
-        amount: req.body.amount,
-        status: 'completed',
-        payment_method: 'razorpay'
-      }])
-      .select()
-      .single();
-    
-    if (error) throw error;
-    
-    await supabase
-      .from('orders')
-      .update({ payment_status: 'paid' })
-      .eq('id', order_id);
-    
-    res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
