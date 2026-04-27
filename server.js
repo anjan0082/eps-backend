@@ -17,9 +17,20 @@ app.use(express.json());
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_ShG1B8BUg7cDW2';
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'E1RPyDteeoRxzjCIlL86H5P3';
 
+console.log('🔧 Razorpay Config:');
+console.log('Key ID:', RAZORPAY_KEY_ID ? '✅ SET' : '❌ MISSING');
+console.log('Key Secret:', RAZORPAY_KEY_SECRET ? '✅ SET' : '❌ MISSING');
+
 // ============ HEALTH CHECK ============
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'EPS Backend v2 is running' });
+  res.json({ 
+    status: 'OK', 
+    message: 'EPS Backend v2 is running',
+    razorpay: {
+      keyId: RAZORPAY_KEY_ID ? '✅' : '❌',
+      keySecret: RAZORPAY_KEY_SECRET ? '✅' : '❌'
+    }
+  });
 });
 
 // ============ GET ALL ORDERS ============
@@ -33,6 +44,7 @@ app.get('/api/orders', async (req, res) => {
     if (error) throw error;
     res.json(data || []);
   } catch (error) {
+    console.error('❌ Error fetching orders:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -40,6 +52,7 @@ app.get('/api/orders', async (req, res) => {
 // ============ CREATE ORDER ============
 app.post('/api/orders', async (req, res) => {
   try {
+    console.log('📝 Creating order:', req.body.eps_reference_code);
     const { data, error } = await supabase
       .from('orders')
       .insert([req.body])
@@ -47,84 +60,105 @@ app.post('/api/orders', async (req, res) => {
       .single();
     
     if (error) throw error;
+    console.log('✅ Order created:', data.id);
     res.status(201).json(data);
   } catch (error) {
-    console.error('Error creating order:', error);
+    console.error('❌ Error creating order:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // ============ CREATE RAZORPAY ORDER ============
 app.post('/api/razorpay/create-order', (req, res) => {
-  const { amount, receipt, customer_email, customer_name } = req.body;
+  try {
+    const { amount, receipt, customer_email, customer_name } = req.body;
 
-  const postData = JSON.stringify({
-    amount: Math.round(amount * 100), // Convert to paise
-    currency: 'INR',
-    receipt: receipt,
-    notes: {
-      customer_email: customer_email,
-      customer_name: customer_name
-    }
-  });
+    console.log('💳 Creating Razorpay order...');
+    console.log('Amount:', amount);
+    console.log('Receipt:', receipt);
 
-  const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
-
-  const options = {
-    hostname: 'api.razorpay.com',
-    port: 443,
-    path: '/v1/orders',
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Content-Type': 'application/json',
-      'Content-Length': postData.length
-    }
-  };
-
-  const request = https.request(options, (response) => {
-    let data = '';
-
-    response.on('data', (chunk) => {
-      data += chunk;
-    });
-
-    response.on('end', () => {
-      try {
-        const parsedData = JSON.parse(data);
-        if (response.statusCode === 200) {
-          res.json({
-            success: true,
-            razorpay_order_id: parsedData.id,
-            amount: parsedData.amount,
-            currency: parsedData.currency,
-            status: parsedData.status
-          });
-        } else {
-          res.status(response.statusCode).json({
-            success: false,
-            error: parsedData.description || 'Failed to create order'
-          });
-        }
-      } catch (error) {
-        res.status(500).json({ success: false, error: 'Invalid response from Razorpay' });
+    const postData = JSON.stringify({
+      amount: Math.round(amount * 100),
+      currency: 'INR',
+      receipt: receipt,
+      notes: {
+        customer_email: customer_email,
+        customer_name: customer_name
       }
     });
-  });
 
-  request.on('error', (error) => {
-    console.error('Razorpay API Error:', error);
+    const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+
+    const options = {
+      hostname: 'api.razorpay.com',
+      port: 443,
+      path: '/v1/orders',
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    console.log('🔌 Connecting to Razorpay API...');
+
+    const request = https.request(options, (response) => {
+      let data = '';
+
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', () => {
+        try {
+          console.log(`📥 Razorpay Response Status: ${response.statusCode}`);
+          const parsedData = JSON.parse(data);
+          
+          if (response.statusCode === 200) {
+            console.log('✅ Razorpay order created:', parsedData.id);
+            res.json({
+              success: true,
+              razorpay_order_id: parsedData.id,
+              amount: parsedData.amount,
+              currency: parsedData.currency,
+              status: parsedData.status
+            });
+          } else {
+            console.error('❌ Razorpay Error:', parsedData);
+            res.status(response.statusCode).json({
+              success: false,
+              error: parsedData.description || parsedData.error?.description || 'Failed to create order'
+            });
+          }
+        } catch (error) {
+          console.error('❌ Parse error:', error);
+          res.status(500).json({ success: false, error: 'Invalid response from Razorpay' });
+        }
+      });
+    });
+
+    request.on('error', (error) => {
+      console.error('❌ Razorpay Connection Error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    });
+
+    request.write(postData);
+    request.end();
+  } catch (error) {
+    console.error('❌ Catch error:', error);
     res.status(500).json({ success: false, error: error.message });
-  });
-
-  request.write(postData);
-  request.end();
+  }
 });
 
 // ============ VERIFY RAZORPAY PAYMENT ============
 app.post('/api/razorpay/verify', async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, order_id } = req.body;
+
+    console.log('🔐 Verifying payment signature...');
+    console.log('Order ID:', order_id);
+    console.log('Payment ID:', razorpay_payment_id);
 
     // Verify signature
     const body = razorpay_order_id + '|' + razorpay_payment_id;
@@ -136,11 +170,14 @@ app.post('/api/razorpay/verify', async (req, res) => {
     const isValidSignature = expectedSignature === razorpay_signature;
 
     if (!isValidSignature) {
+      console.error('❌ Invalid signature');
       return res.status(400).json({ 
         success: false, 
         error: 'Invalid payment signature' 
       });
     }
+
+    console.log('✅ Signature verified');
 
     // Update order in database
     const { data, error } = await supabase
@@ -156,13 +193,15 @@ app.post('/api/razorpay/verify', async (req, res) => {
 
     if (error) throw error;
 
+    console.log('✅ Order updated to paid');
+
     res.json({ 
       success: true, 
       message: 'Payment verified successfully',
       data 
     });
   } catch (error) {
-    console.error('Verification Error:', error);
+    console.error('❌ Verification Error:', error);
     res.status(500).json({ 
       success: false,
       error: error.message 
