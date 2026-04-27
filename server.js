@@ -1,8 +1,6 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
-const axios = require('axios');
-const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -13,9 +11,6 @@ const supabase = createClient(
 
 app.use(cors());
 app.use(express.json());
-
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_ShG1B8BUg7cDW2';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'E1RPyDteeoRxzjCIlL86H5P3';
 
 // ============ HEALTH CHECK ============
 app.get('/health', (req, res) => {
@@ -54,69 +49,11 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-// ============ CREATE RAZORPAY ORDER ============
-app.post('/api/razorpay/create', async (req, res) => {
+// ============ UPDATE ORDER PAYMENT STATUS ============
+app.post('/api/orders/payment/confirm', async (req, res) => {
   try {
-    const { amount, receipt, customer_email, customer_name } = req.body;
+    const { orderId, razorpayPaymentId } = req.body;
 
-    // Razorpay API call to create order
-    const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
-    
-    const razorpayResponse = await axios.post(
-      'https://api.razorpay.com/v1/orders',
-      {
-        amount: Math.round(amount * 100), // Convert to paise
-        currency: 'INR',
-        receipt: receipt,
-        payment_capture: 1, // Auto-capture payment
-        notes: {
-          customer_email: customer_email,
-          customer_name: customer_name
-        }
-      },
-      {
-        auth: {
-          username: RAZORPAY_KEY_ID,
-          password: RAZORPAY_KEY_SECRET
-        }
-      }
-    );
-
-    res.json({
-      success: true,
-      razorpay_order_id: razorpayResponse.data.id,
-      amount: razorpayResponse.data.amount,
-      currency: razorpayResponse.data.currency
-    });
-  } catch (error) {
-    console.error('Razorpay Create Order Error:', error.response?.data || error.message);
-    res.status(500).json({ 
-      success: false,
-      error: error.response?.data?.description || error.message 
-    });
-  }
-});
-
-// ============ VERIFY RAZORPAY PAYMENT ============
-app.post('/api/razorpay/verify', async (req, res) => {
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, order_id } = req.body;
-
-    // Verify signature
-    const body = razorpay_order_id + '|' + razorpay_payment_id;
-    const expectedSignature = crypto
-      .createHmac('sha256', RAZORPAY_KEY_SECRET)
-      .update(body.toString())
-      .digest('hex');
-
-    if (expectedSignature !== razorpay_signature) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid signature' 
-      });
-    }
-
-    // Update order in database
     const { data, error } = await supabase
       .from('orders')
       .update({ 
@@ -124,23 +61,14 @@ app.post('/api/razorpay/verify', async (req, res) => {
         order_status: 'confirmed',
         updated_at: new Date().toISOString()
       })
-      .eq('id', order_id)
+      .eq('id', orderId)
       .select()
       .single();
 
     if (error) throw error;
-
-    res.json({ 
-      success: true, 
-      message: 'Payment verified and order confirmed',
-      data 
-    });
+    res.json({ success: true, data });
   } catch (error) {
-    console.error('Payment Verification Error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 
