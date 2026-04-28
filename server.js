@@ -237,10 +237,10 @@ app.post('/api/xpresion/tracking', (req, res) => {
     const { awb_number } = req.body;
 
     if (!awb_number) {
-      return res.status(400).json({ error: 'AWB number is required' });
+      return res.status(400).json({ success: false, error: 'AWB number is required' });
     }
 
-    console.log('📦 Fetching Xpresion tracking for AWB:', awb_number);
+    console.log('📦 Xpresion Tracking Request for AWB:', awb_number);
 
     const postData = JSON.stringify({
       UserID: 'CARD',
@@ -261,6 +261,8 @@ app.post('/api/xpresion/tracking', (req, res) => {
       }
     };
 
+    console.log('🔌 Connecting to Xpresion...');
+
     const request = https.request(options, (response) => {
       let data = '';
 
@@ -271,38 +273,70 @@ app.post('/api/xpresion/tracking', (req, res) => {
       response.on('end', () => {
         try {
           console.log(`📥 Xpresion Response Status: ${response.statusCode}`);
-          const parsedData = JSON.parse(data);
           
+          // Try to parse JSON
+          let parsedData;
+          try {
+            parsedData = JSON.parse(data);
+          } catch (e) {
+            // If not JSON, return raw data
+            console.log('⚠️ Xpresion response is not JSON, returning raw:', data);
+            parsedData = { raw: data };
+          }
+
+          console.log('📥 Xpresion Response:', JSON.stringify(parsedData).substring(0, 200));
+          
+          // Success if status is 200 or 201
           if (response.statusCode === 200 || response.statusCode === 201) {
-            console.log('✅ Xpresion tracking data received');
+            console.log('✅ Xpresion tracking data received successfully');
             res.json({
               success: true,
               data: parsedData
             });
           } else {
-            console.error('❌ Xpresion Error:', parsedData);
+            console.error('❌ Xpresion returned error status:', response.statusCode);
             res.status(response.statusCode).json({
               success: false,
-              error: parsedData.Message || 'Failed to get tracking data'
+              error: parsedData.Message || parsedData.error || `Xpresion error: ${response.statusCode}`
             });
           }
         } catch (error) {
-          console.error('❌ Parse error:', error);
-          res.status(500).json({ success: false, error: 'Invalid response from Xpresion' });
+          console.error('❌ Error parsing Xpresion response:', error.message);
+          res.status(500).json({ 
+            success: false, 
+            error: 'Failed to parse Xpresion response: ' + error.message 
+          });
         }
       });
     });
 
     request.on('error', (error) => {
-      console.error('❌ Xpresion Connection Error:', error);
-      res.status(500).json({ success: false, error: error.message });
+      console.error('❌ Xpresion Connection Error:', error.message);
+      res.status(500).json({ 
+        success: false, 
+        error: 'Failed to connect to Xpresion API: ' + error.message 
+      });
     });
 
+    request.on('timeout', () => {
+      console.error('❌ Xpresion Request Timeout');
+      request.destroy();
+      res.status(500).json({ 
+        success: false, 
+        error: 'Xpresion API request timeout' 
+      });
+    });
+
+    request.setTimeout(10000); // 10 second timeout
     request.write(postData);
     request.end();
+
   } catch (error) {
-    console.error('❌ Catch error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('❌ Tracking endpoint error:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error: ' + error.message 
+    });
   }
 });
 
