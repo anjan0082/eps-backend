@@ -231,6 +231,81 @@ app.patch('/api/orders/:id/status', async (req, res) => {
   }
 });
 
+// ============ XPRESION TRACKING ============
+app.post('/api/xpresion/tracking', (req, res) => {
+  try {
+    const { awb_number } = req.body;
+
+    if (!awb_number) {
+      return res.status(400).json({ error: 'AWB number is required' });
+    }
+
+    console.log('📦 Fetching Xpresion tracking for AWB:', awb_number);
+
+    const postData = JSON.stringify({
+      UserID: 'CARD',
+      Password: 'A2F61EDB3E',
+      AWBNo: awb_number,
+      ShowAllFields: 'Yes',
+      RequiredUrl: 'Yes'
+    });
+
+    const options = {
+      hostname: 'epsm.xpresion.in',
+      port: 443,
+      path: '/api/v1/Tracking/Tracking',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const request = https.request(options, (response) => {
+      let data = '';
+
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', () => {
+        try {
+          console.log(`📥 Xpresion Response Status: ${response.statusCode}`);
+          const parsedData = JSON.parse(data);
+          
+          if (response.statusCode === 200 || response.statusCode === 201) {
+            console.log('✅ Xpresion tracking data received');
+            res.json({
+              success: true,
+              data: parsedData
+            });
+          } else {
+            console.error('❌ Xpresion Error:', parsedData);
+            res.status(response.statusCode).json({
+              success: false,
+              error: parsedData.Message || 'Failed to get tracking data'
+            });
+          }
+        } catch (error) {
+          console.error('❌ Parse error:', error);
+          res.status(500).json({ success: false, error: 'Invalid response from Xpresion' });
+        }
+      });
+    });
+
+    request.on('error', (error) => {
+      console.error('❌ Xpresion Connection Error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    });
+
+    request.write(postData);
+    request.end();
+  } catch (error) {
+    console.error('❌ Catch error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ============ GET ANALYTICS ============
 app.get('/api/analytics/dashboard', async (req, res) => {
   try {
