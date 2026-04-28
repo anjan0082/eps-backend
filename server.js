@@ -33,7 +33,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ============ GET ALL ORDERS ============
+// ============ ORDERS ENDPOINTS ============
 app.get('/api/orders', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -49,7 +49,6 @@ app.get('/api/orders', async (req, res) => {
   }
 });
 
-// ============ CREATE ORDER ============
 app.post('/api/orders', async (req, res) => {
   try {
     console.log('📝 Creating order:', req.body.eps_reference_code);
@@ -68,7 +67,28 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-// ============ CREATE RAZORPAY ORDER ============
+app.patch('/api/orders/:id/status', async (req, res) => {
+  try {
+    const { new_status } = req.body;
+    
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ 
+        order_status: new_status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ RAZORPAY ENDPOINTS ============
 app.post('/api/razorpay/create-order', (req, res) => {
   try {
     const { amount, receipt, customer_email, customer_name } = req.body;
@@ -115,7 +135,7 @@ app.post('/api/razorpay/create-order', (req, res) => {
           console.log(`📥 Razorpay Response Status: ${response.statusCode}`);
           const parsedData = JSON.parse(data);
           
-          if (response.statusCode === 200) {
+          if (response.statusCode === 200 || response.statusCode === 201) {
             console.log('✅ Razorpay order created:', parsedData.id);
             res.json({
               success: true,
@@ -143,15 +163,22 @@ app.post('/api/razorpay/create-order', (req, res) => {
       res.status(500).json({ success: false, error: error.message });
     });
 
+    request.on('timeout', () => {
+      console.error('❌ Razorpay Request Timeout');
+      request.destroy();
+      res.status(500).json({ success: false, error: 'Razorpay API request timeout' });
+    });
+
+    request.setTimeout(10000);
     request.write(postData);
     request.end();
+
   } catch (error) {
     console.error('❌ Catch error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// ============ VERIFY RAZORPAY PAYMENT ============
 app.post('/api/razorpay/verify', async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, order_id } = req.body;
@@ -160,7 +187,6 @@ app.post('/api/razorpay/verify', async (req, res) => {
     console.log('Order ID:', order_id);
     console.log('Payment ID:', razorpay_payment_id);
 
-    // Verify signature
     const body = razorpay_order_id + '|' + razorpay_payment_id;
     const expectedSignature = crypto
       .createHmac('sha256', RAZORPAY_KEY_SECRET)
@@ -179,7 +205,6 @@ app.post('/api/razorpay/verify', async (req, res) => {
 
     console.log('✅ Signature verified');
 
-    // Update order in database
     const { data, error } = await supabase
       .from('orders')
       .update({ 
@@ -206,28 +231,6 @@ app.post('/api/razorpay/verify', async (req, res) => {
       success: false,
       error: error.message 
     });
-  }
-});
-
-// ============ UPDATE ORDER STATUS ============
-app.patch('/api/orders/:id/status', async (req, res) => {
-  try {
-    const { new_status } = req.body;
-    
-    const { data, error } = await supabase
-      .from('orders')
-      .update({ 
-        order_status: new_status,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', req.params.id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
 });
 
@@ -274,19 +277,16 @@ app.post('/api/xpresion/tracking', (req, res) => {
         try {
           console.log(`📥 Xpresion Response Status: ${response.statusCode}`);
           
-          // Try to parse JSON
           let parsedData;
           try {
             parsedData = JSON.parse(data);
           } catch (e) {
-            // If not JSON, return raw data
             console.log('⚠️ Xpresion response is not JSON, returning raw:', data);
             parsedData = { raw: data };
           }
 
           console.log('📥 Xpresion Response:', JSON.stringify(parsedData).substring(0, 200));
           
-          // Success if status is 200 or 201
           if (response.statusCode === 200 || response.statusCode === 201) {
             console.log('✅ Xpresion tracking data received successfully');
             res.json({
@@ -327,7 +327,7 @@ app.post('/api/xpresion/tracking', (req, res) => {
       });
     });
 
-    request.setTimeout(10000); // 10 second timeout
+    request.setTimeout(10000);
     request.write(postData);
     request.end();
 
@@ -340,7 +340,168 @@ app.post('/api/xpresion/tracking', (req, res) => {
   }
 });
 
-// ============ GET ANALYTICS ============
+// ============ CUSTOMER AUTHENTICATION ============
+
+// Register Customer
+app.post('/api/customers/register', async (req, res) => {
+  try {
+    const { name, email, phone, password } = req.body;
+
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({ success: false, error: 'All fields are required' });
+    }
+
+    const { data: existingCustomer } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (existingCustomer) {
+      return res.status(400).json({ success: false, error: 'Email already registered' });
+    }
+
+    const hashedPassword = Buffer.from(password).toString('base64');
+
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .insert([{
+        name,
+        email,
+        phone,
+        password_hash: hashedPassword,
+        created_at: new Date().toISOString()
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    console.log('✅ Customer registered:', customer.id);
+    
+    res.status(201).json({
+      success: true,
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone
+      }
+    });
+  } catch (error) {
+    console.error('❌ Registration error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Login Customer
+app.post('/api/customers/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password are required' });
+    }
+
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (error || !customer) {
+      return res.status(401).json({ success: false, error: 'Invalid email or password' });
+    }
+
+    const hashedPassword = Buffer.from(password).toString('base64');
+    if (customer.password_hash !== hashedPassword) {
+      return res.status(401).json({ success: false, error: 'Invalid email or password' });
+    }
+
+    console.log('✅ Customer logged in:', customer.id);
+
+    res.json({
+      success: true,
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone
+      }
+    });
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get Customer Shipments
+app.get('/api/customers/:customerId/shipments', async (req, res) => {
+  try {
+    const { customerId } = req.params;
+
+    const { data: shipments, error } = await supabase
+      .from('orders')
+      .select('*')
+      .or(`customer_email.eq.${customerId},customer_phone.eq.${customerId}`)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    console.log(`✅ Loaded ${shipments.length} shipments for customer:`, customerId);
+
+    res.json({
+      success: true,
+      shipments: shipments || []
+    });
+  } catch (error) {
+    console.error('❌ Error loading shipments:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Link Shipment to Customer
+app.post('/api/customers/:customerId/add-shipment', async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const { awb_number } = req.body;
+
+    if (!awb_number) {
+      return res.status(400).json({ success: false, error: 'AWB number is required' });
+    }
+
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .single();
+
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found' });
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ customer_email: customer.email })
+      .eq('awb_number', awb_number)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    console.log('✅ Shipment linked to customer:', customerId);
+
+    res.json({
+      success: true,
+      shipment: data
+    });
+  } catch (error) {
+    console.error('❌ Error linking shipment:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============ ANALYTICS ============
 app.get('/api/analytics/dashboard', async (req, res) => {
   try {
     const { data: orders, error } = await supabase
@@ -373,4 +534,18 @@ app.get('/api/analytics/dashboard', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ EPS Backend running on port ${PORT}`);
+  console.log('');
+  console.log('📋 Available Endpoints:');
+  console.log('  GET  /health - Health check');
+  console.log('  GET  /api/orders - Get all orders');
+  console.log('  POST /api/orders - Create order');
+  console.log('  POST /api/razorpay/create-order - Create Razorpay order');
+  console.log('  POST /api/razorpay/verify - Verify Razorpay payment');
+  console.log('  POST /api/xpresion/tracking - Track shipment');
+  console.log('  POST /api/customers/register - Register customer');
+  console.log('  POST /api/customers/login - Login customer');
+  console.log('  GET  /api/customers/:id/shipments - Get customer shipments');
+  console.log('  POST /api/customers/:id/add-shipment - Link shipment to customer');
+  console.log('  GET  /api/analytics/dashboard - Get analytics');
+  console.log('');
 });
