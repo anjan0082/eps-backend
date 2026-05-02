@@ -88,6 +88,21 @@ app.patch('/api/orders/:id/status', async (req, res) => {
   }
 });
 
+// DELETE order endpoint (for Operations Head)
+app.delete('/api/orders/:id', async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('orders')
+      .delete()
+      .eq('id', req.params.id);
+    
+    if (error) throw error;
+    res.json({ success: true, message: 'Order deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============ RAZORPAY ENDPOINTS ============
 app.post('/api/razorpay/create-order', (req, res) => {
   try {
