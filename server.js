@@ -137,11 +137,28 @@ app.patch('/api/orders/:id', async (req, res) => {
     console.log('Updating order:', req.params.id);
     console.log('Update data:', updateData);
     
+    // Only include columns that exist in the orders table
+    const validColumns = [
+      'customer_name', 'customer_email', 'customer_phone',
+      'pickup_address', 'pickup_pincode', 'delivery_address', 'delivery_pincode',
+      'service_type', 'shipping_method', 'package_weight', 'package_length',
+      'package_width', 'package_height', 'order_amount', 'order_status', 'payment_status'
+    ];
+
+    const cleanData = {};
+    Object.keys(updateData).forEach(key => {
+      if (validColumns.includes(key) && updateData[key] !== null && updateData[key] !== undefined && updateData[key] !== '') {
+        cleanData[key] = updateData[key];
+      }
+    });
+
+    console.log('Cleaned update data:', cleanData);
+
     // Update the order
     const { data, error } = await supabase
       .from('orders')
       .update({
-        ...updateData,
+        ...cleanData,
         updated_at: new Date().toISOString()
       })
       .eq('id', req.params.id)
@@ -150,20 +167,20 @@ app.patch('/api/orders/:id', async (req, res) => {
     
     if (error) throw error;
     
-    // Log the edit
-    console.log('Order updated, logging edit...');
+    console.log('✅ Order updated successfully');
+    
+    // Log the edit (optional - will fail silently if table doesn't exist)
     const editLog = {
       order_id: req.params.id,
       edited_by: edited_by || 'unknown',
       edited_at: edited_at || new Date().toISOString(),
-      changes: JSON.stringify(updateData)
+      changes: JSON.stringify(cleanData)
     };
     
-    // Try to insert into edit_logs table if it exists
     await supabase
       .from('edit_logs')
       .insert([editLog])
-      .catch(err => console.log('Edit log note:', err.message));
+      .catch(err => console.log('Note: Edit log table not available:', err.message));
     
     res.json(data);
   } catch (error) {
