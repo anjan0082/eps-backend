@@ -142,7 +142,7 @@ app.patch('/api/orders/:id', async (req, res) => {
       'customer_name', 'customer_email', 'customer_phone',
       'pickup_address', 'pickup_pincode', 'delivery_address', 'delivery_pincode',
       'service_type', 'shipping_method', 'package_weight', 'package_length',
-      'package_width', 'package_height', 'order_amount', 'order_status', 'payment_status'
+      'package_width', 'package_height', 'volumetric_weight', 'order_amount', 'order_status', 'payment_status'
     ];
 
     const cleanData = {};
