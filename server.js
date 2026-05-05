@@ -52,35 +52,45 @@ app.get('/api/orders', async (req, res) => {
 app.post('/api/orders', async (req, res) => {
   try {
     console.log('📝 Creating order:', req.body.eps_reference_code);
-    console.log('Received order data:', JSON.stringify(req.body, null, 2));
-    
-    // First, ensure the employee exists
     const employeeId = req.body.employee_id;
-    console.log('Checking if employee exists:', employeeId);
+    console.log('Step 1: Checking/creating employee:', employeeId);
     
-    // Try to insert employee if doesn't exist
-    await supabase
+    // Step 1: Insert employee with proper error handling
+    const { data: existingEmployee, error: checkError } = await supabase
       .from('employees')
-      .insert({
-        id: employeeId,
-        name: 'Employee User',
-        email: `${employeeId}@eps.com`,
-        phone: '9000000000',
-        password_hash: 'hashed',
-        role: 'employee',
-        department: 'Operations',
-        active: true
-      })
-      .then(() => console.log('✅ Employee created'))
-      .catch((err) => {
-        if (err.code === '23505') {
-          console.log('Employee already exists');
-        } else {
-          console.log('Employee creation note:', err.message);
-        }
-      });
+      .select('id')
+      .eq('id', employeeId)
+      .single();
     
-    // Only include columns that exist in the orders table
+    if (!existingEmployee) {
+      console.log('Employee does not exist, creating...');
+      const { data: newEmployee, error: insertError } = await supabase
+        .from('employees')
+        .insert({
+          id: employeeId,
+          name: 'Employee User',
+          email: `${employeeId}@eps.com`,
+          phone: '9000000000',
+          password_hash: 'hashed',
+          role: 'employee',
+          department: 'Operations',
+          active: true
+        })
+        .select()
+        .single();
+      
+      if (insertError) {
+        console.log('Error creating employee:', insertError);
+        throw new Error(`Failed to create employee: ${insertError.message}`);
+      }
+      console.log('✅ Employee created:', newEmployee.id);
+    } else {
+      console.log('✅ Employee already exists:', existingEmployee.id);
+    }
+    
+    // Step 2: Now create the order (employee is guaranteed to exist)
+    console.log('Step 2: Creating order...');
+    
     const validColumns = [
       'id', 'eps_reference_code', 'awb_number', 'employee_id',
       'customer_name', 'customer_email', 'customer_phone',
@@ -91,7 +101,6 @@ app.post('/api/orders', async (req, res) => {
       'created_at', 'updated_at'
     ];
 
-    // Filter the request body to only include valid columns
     const cleanData = {};
     Object.keys(req.body).forEach(key => {
       if (validColumns.includes(key) && req.body[key] !== null && req.body[key] !== undefined) {
@@ -101,23 +110,23 @@ app.post('/api/orders', async (req, res) => {
 
     console.log('Cleaned order data:', JSON.stringify(cleanData, null, 2));
 
-    const { data, error } = await supabase
+    const { data: orderData, error: orderError } = await supabase
       .from('orders')
       .insert([cleanData])
       .select();
     
-    if (error) {
-      console.error('Supabase Error Details:', error);
-      throw new Error(`Database error: ${error.message} - ${JSON.stringify(error.details)}`);
+    if (orderError) {
+      console.error('❌ Order creation error:', orderError);
+      throw new Error(`Database error: ${orderError.message}`);
     }
     
-    console.log('✅ Order created successfully');
-    res.status(201).json(data[0]);
+    console.log('✅ Order created successfully:', orderData[0].id);
+    res.status(201).json(orderData[0]);
+    
   } catch (error) {
-    console.error('❌ Error creating order:', error.message);
+    console.error('❌ Error in order creation:', error.message);
     res.status(500).json({ 
-      error: error.message,
-      details: error.toString()
+      error: error.message
     });
   }
 });
