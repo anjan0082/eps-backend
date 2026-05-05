@@ -54,6 +54,32 @@ app.post('/api/orders', async (req, res) => {
     console.log('📝 Creating order:', req.body.eps_reference_code);
     console.log('Received order data:', JSON.stringify(req.body, null, 2));
     
+    // First, ensure the employee exists
+    const employeeId = req.body.employee_id;
+    console.log('Checking if employee exists:', employeeId);
+    
+    // Try to insert employee if doesn't exist
+    await supabase
+      .from('employees')
+      .insert({
+        id: employeeId,
+        name: 'Employee User',
+        email: `${employeeId}@eps.com`,
+        phone: '9000000000',
+        password_hash: 'hashed',
+        role: 'employee',
+        department: 'Operations',
+        active: true
+      })
+      .then(() => console.log('✅ Employee created'))
+      .catch((err) => {
+        if (err.code === '23505') {
+          console.log('Employee already exists');
+        } else {
+          console.log('Employee creation note:', err.message);
+        }
+      });
+    
     // Only include columns that exist in the orders table
     const validColumns = [
       'id', 'eps_reference_code', 'awb_number', 'employee_id',
