@@ -52,18 +52,47 @@ app.get('/api/orders', async (req, res) => {
 app.post('/api/orders', async (req, res) => {
   try {
     console.log('📝 Creating order:', req.body.eps_reference_code);
+    console.log('Received order data:', JSON.stringify(req.body, null, 2));
+    
+    // Only include columns that exist in the orders table
+    const validColumns = [
+      'id', 'eps_reference_code', 'awb_number', 'employee_id',
+      'customer_name', 'customer_email', 'customer_phone',
+      'pickup_address', 'pickup_pincode', 'delivery_address', 'delivery_pincode',
+      'service_type', 'shipping_method', 'package_weight', 'package_length',
+      'package_width', 'package_height', 'volumetric_weight', 'order_amount',
+      'order_status', 'payment_method', 'payment_status', 'notes',
+      'created_at', 'updated_at'
+    ];
+
+    // Filter the request body to only include valid columns
+    const cleanData = {};
+    Object.keys(req.body).forEach(key => {
+      if (validColumns.includes(key) && req.body[key] !== null && req.body[key] !== undefined) {
+        cleanData[key] = req.body[key];
+      }
+    });
+
+    console.log('Cleaned order data:', JSON.stringify(cleanData, null, 2));
+
     const { data, error } = await supabase
       .from('orders')
-      .insert([req.body])
-      .select()
-      .single();
+      .insert([cleanData])
+      .select();
     
-    if (error) throw error;
-    console.log('✅ Order created:', data.id);
-    res.status(201).json(data);
+    if (error) {
+      console.error('Supabase Error Details:', error);
+      throw new Error(`Database error: ${error.message} - ${JSON.stringify(error.details)}`);
+    }
+    
+    console.log('✅ Order created successfully');
+    res.status(201).json(data[0]);
   } catch (error) {
-    console.error('❌ Error creating order:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Error creating order:', error.message);
+    res.status(500).json({ 
+      error: error.message,
+      details: error.toString()
+    });
   }
 });
 
