@@ -71,7 +71,6 @@ app.post('/api/orders', async (req, res) => {
           name: 'Employee User',
           email: `${employeeId}@eps.com`,
           phone: '9000000000',
-          password_hash: 'hashed',
           role: 'employee',
           department: 'Operations',
           active: true
