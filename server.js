@@ -130,6 +130,49 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
+app.patch('/api/orders/:id', async (req, res) => {
+  try {
+    const { edited_by, edited_at, ...updateData } = req.body;
+    
+    console.log('Updating order:', req.params.id);
+    console.log('Update data:', updateData);
+    
+    // Update the order
+    const { data, error } = await supabase
+      .from('orders')
+      .update({
+        ...updateData,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    // Log the edit
+    console.log('Order updated, logging edit...');
+    const editLog = {
+      order_id: req.params.id,
+      edited_by: edited_by || 'unknown',
+      edited_at: edited_at || new Date().toISOString(),
+      changes: JSON.stringify(updateData)
+    };
+    
+    // Try to insert into edit_logs table if it exists
+    await supabase
+      .from('edit_logs')
+      .insert([editLog])
+      .catch(err => console.log('Edit log note:', err.message));
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Error updating order:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Keep the old status endpoint for backward compatibility
 app.patch('/api/orders/:id/status', async (req, res) => {
   try {
     const { new_status } = req.body;
