@@ -169,18 +169,27 @@ app.patch('/api/orders/:id', async (req, res) => {
     
     console.log('✅ Order updated successfully');
     
-    // Log the edit (optional - will fail silently if table doesn't exist)
-    const editLog = {
-      order_id: req.params.id,
-      edited_by: edited_by || 'unknown',
-      edited_at: edited_at || new Date().toISOString(),
-      changes: JSON.stringify(cleanData)
-    };
-    
-    await supabase
-      .from('edit_logs')
-      .insert([editLog])
-      .catch(err => console.log('Note: Edit log table not available:', err.message));
+    // Log the edit (optional - fail silently if table doesn't exist)
+    try {
+      const editLog = {
+        order_id: req.params.id,
+        edited_by: edited_by || 'unknown',
+        edited_at: edited_at || new Date().toISOString(),
+        changes: JSON.stringify(cleanData)
+      };
+      
+      const { error: logError } = await supabase
+        .from('edit_logs')
+        .insert([editLog]);
+      
+      if (logError) {
+        console.log('Note: Edit log table not available:', logError.message);
+      } else {
+        console.log('✅ Edit log created');
+      }
+    } catch (logErr) {
+      console.log('Note: Could not create edit log:', logErr.message);
+    }
     
     res.json(data);
   } catch (error) {
