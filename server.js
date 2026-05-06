@@ -14,8 +14,8 @@ const supabase = createClient(
 app.use(cors());
 app.use(express.json());
 
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_ShG1B8BUg7cDW2';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'E1RPyDteeoRxzjCIlL86H5P3';
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_SlzoWnL8IxdnLU';
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'lhwNLt9KBKFboQValjVURwTR';
 
 console.log('🔧 Razorpay Config:');
 console.log('Key ID:', RAZORPAY_KEY_ID ? '✅ SET' : '❌ MISSING');
