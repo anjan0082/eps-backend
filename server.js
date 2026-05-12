@@ -2,6 +2,7 @@ const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const Razorpay = require('razorpay');
 const cors = require('cors');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -149,8 +150,8 @@ app.post('/api/verify-payment', async (req, res) => {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
     
     const body = razorpay_order_id + '|' + razorpay_payment_id;
-    const expectedSignature = require('crypto')
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'E1RPyDteeoRxzjCIlL86H5P3')
       .update(body)
       .digest('hex');
 
