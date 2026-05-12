@@ -139,7 +139,7 @@ app.patch('/api/orders/:id', async (req, res) => {
     
     // Only include columns that exist in the orders table
     const validColumns = [
-      'customer_name', 'customer_email', 'customer_phone',
+      'customer_name', 'customer_email', 'customer_phone', 'receiver_name',
       'pickup_address', 'pickup_pincode', 'delivery_address', 'delivery_pincode',
       'service_type', 'shipping_method', 'package_weight', 'package_length',
       'package_width', 'package_height', 'volumetric_weight', 'order_amount', 'order_status', 'payment_status'
