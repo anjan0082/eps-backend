@@ -15,6 +15,17 @@ app.post('/api/orders', async (req, res) => {
   try {
     const orderData = req.body;
 
+    // Get the count of existing orders to generate next invoice number
+    const { count, error: countError } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) throw countError;
+
+    // Generate next invoice number (count + 1)
+    const nextInvoiceNumber = (count || 0) + 1;
+    orderData.invoice_number = 'EPS' + String(nextInvoiceNumber).padStart(6, '0');
+
     const { data, error } = await supabase.from('orders').insert([orderData]);
 
     if (error) throw error;
