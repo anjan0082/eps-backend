@@ -1,8 +1,9 @@
 [build]
   command = "npm install"
   functions = "functions"
+  publish = "public"
 
 [[redirects]]
   from = "/api/*"
-  to = "/.netlify/functions/server:splat"
+  to = "/.netlify/functions/server"
   status = 200
