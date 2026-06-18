@@ -39,13 +39,7 @@ module.exports = async (req, res) => {
         awbNo,
         status: (awbData.$ && awbData.$.Status) ? awbData.$.Status : 'Unknown',
         receiverName: awbData.Receiver ? awbData.Receiver[0] : 'N/A',
-        currentLocation: awbData.CurrentLocation ? awbData.CurrentLocation[0] : 'N/A',
-        events: awbData.Event ? awbData.Event.map(e => ({
-          date: e.$ ? e.$.Date : '',
-          time: e.$ ? e.$.Time : '',
-          location: e.$ ? e.$.Location : '',
-          status: e.$ ? e.$.Status : ''
-        })) : []
+        currentLocation: awbData.CurrentLocation ? awbData.CurrentLocation[0] : 'N/A'
       };
       return res.json({ success: true, tracking });
     }
