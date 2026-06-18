@@ -65,14 +65,18 @@ app.post('/api/track-bluedart', async (req, res) => {
 
         console.log('BlueDart Parsed Result:', JSON.stringify(result, null, 2));
 
-        if (result.BlueDartResponse && result.BlueDartResponse.AWB) {
-            const awbData = result.BlueDartResponse.AWB[0];
+        // Check for ShipmentData > Shipment (correct structure)
+        if (result.ShipmentData && result.ShipmentData.Shipment) {
+            const shipment = result.ShipmentData.Shipment[0];
             
             const tracking = {
                 awbNo: awbNo,
-                status: awbData.$ ? awbData.$.Status : 'Unknown',
-                receiverName: awbData.Receiver ? awbData.Receiver[0] : 'N/A',
-                currentLocation: awbData.CurrentLocation ? awbData.CurrentLocation[0] : 'N/A',
+                status: shipment.$?.Status || 'In Transit',
+                receiverName: shipment.Receiver ? shipment.Receiver[0] : 'N/A',
+                currentLocation: shipment.CurrentLocation ? shipment.CurrentLocation[0] : 'N/A',
+                service: shipment.Service ? shipment.Service[0] : 'N/A',
+                origin: shipment.Origin ? shipment.Origin[0] : 'N/A',
+                destination: shipment.Destination ? shipment.Destination[0] : 'N/A',
                 events: []
             };
 
