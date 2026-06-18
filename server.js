@@ -43,14 +43,14 @@ app.post('/api/track-bluedart', async (req, res) => {
         }
 
         const loginId = process.env.BLUEDART_LOGIN_ID || 'BOM05840';
-        const licenseKey = process.env.BLUEDART_LICENSE_KEY || 'nfjmmrtlhrotqhffovjfromhvtktvshr';
+        const licenseKey = process.env.BLUEDART_LICENSE_KEY || 'nfjmmrtlhrotqhffvojfromhvtktvshr';
         
         const url = `https://api.bluedart.com/servlet/RoutingServlet?handler=tnt&action=custawbquery&loginid=${loginId}&awb=awb&numbers=${awbNo}&format=xml&lickey=${licenseKey}&verno=1.3&scan=0`;
 
-        console.log('BlueDart Request:', url);
+        console.log('BlueDart Request URL:', url);
 
         const response = await axios.get(url, {
-            timeout: 5000,
+            timeout: 10000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                 'Accept': 'application/xml',
@@ -58,10 +58,12 @@ app.post('/api/track-bluedart', async (req, res) => {
             }
         });
 
-        console.log('BlueDart Response:', response.data.substring(0, 200));
+        console.log('BlueDart Raw Response:', response.data);
 
         const parser = new xml2js.Parser();
         const result = await parser.parseStringPromise(response.data);
+
+        console.log('BlueDart Parsed Result:', JSON.stringify(result, null, 2));
 
         if (result.BlueDartResponse && result.BlueDartResponse.AWB) {
             const awbData = result.BlueDartResponse.AWB[0];
@@ -77,9 +79,14 @@ app.post('/api/track-bluedart', async (req, res) => {
             return res.json({ success: true, tracking, provider: 'bluedart' });
         }
 
-        return res.status(400).json({ success: false, error: 'AWB not found in BlueDart' });
+        return res.status(400).json({ 
+            success: false, 
+            error: 'AWB not found in BlueDart',
+            rawResponse: response.data.substring(0, 500)
+        });
     } catch (error) {
         console.error('BlueDart Error:', error.message);
+        console.error('BlueDart Error Details:', error);
         return res.status(400).json({
             success: false,
             error: 'Error tracking with BlueDart: ' + error.message
