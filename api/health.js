@@ -1,4 +1,4 @@
-export default function handler(req, res) {
+module.exports = (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.json({
     status: 'OK',
@@ -6,4 +6,4 @@ export default function handler(req, res) {
     providers: ['bluedart', 'gati', 'xpresion'],
     timestamp: new Date().toISOString()
   });
-}
+};
