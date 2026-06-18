@@ -1,5 +1,11 @@
 {
   "version": 2,
-  "buildCommand": "echo 'No build needed for serverless routes'",
-  "outputDirectory": "./"
+  "builds": [
+    { "src": "index.js", "use": "@vercel/node" },
+    { "src": "api/**/*.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "api/$1" },
+    { "src": "/(.*)", "dest": "index.js" }
+  ]
 }
