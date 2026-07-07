@@ -11,6 +11,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Startup check — warn loudly if BlueDart credentials aren't coming from
+// real environment variables. Relying on the hardcoded fallbacks below is
+// what caused the "License Mismatch" bug (the old fallback had a typo'd key).
+if (!process.env.BLUEDART_LOGIN_ID || !process.env.BLUEDART_LICENSE_KEY) {
+    console.warn('⚠️  BLUEDART_LOGIN_ID / BLUEDART_LICENSE_KEY not set as environment variables.');
+    console.warn('⚠️  Falling back to hardcoded defaults — set these in Vercel Project Settings > Environment Variables for Production.');
+}
+
 // Root route
 app.get('/', (req, res) => {
     res.json({
@@ -34,7 +42,7 @@ app.get('/health', (req, res) => {
 app.post('/api/track-bluedart', async (req, res) => {
     try {
         const { awbNo } = req.body;
-        
+
         if (!awbNo) {
             return res.status(400).json({
                 success: false,
@@ -43,8 +51,12 @@ app.post('/api/track-bluedart', async (req, res) => {
         }
 
         const loginId = process.env.BLUEDART_LOGIN_ID || 'BOM05840';
-        const licenseKey = process.env.BLUEDART_LICENSE_KEY || 'nfjmmrtlhrotqhffvojfromhvtktvshr';
-        
+        // FIX: previous fallback key had two transposed characters
+        // ("...hffvoj...") which does not match the key BlueDart issued
+        // ("...hffovj..."). That mismatch was the root cause of the
+        // "License Mismatch" error whenever the env var wasn't set.
+        const licenseKey = process.env.BLUEDART_LICENSE_KEY || 'nfjmmrtlhrotqhffovjfromhvtktvshr';
+
         const url = `https://api.bluedart.com/servlet/RoutingServlet?handler=tnt&action=custawbquery&loginid=${loginId}&awb=awb&numbers=${awbNo}&format=xml&lickey=${licenseKey}&verno=1.3&scan=0`;
 
         console.log('BlueDart Request URL:', url);
@@ -68,7 +80,20 @@ app.post('/api/track-bluedart', async (req, res) => {
         // Check for ShipmentData > Shipment (correct structure)
         if (result.ShipmentData && result.ShipmentData.Shipment) {
             const shipment = result.ShipmentData.Shipment[0];
-            
+
+            // Surface BlueDart's own <Error> node (e.g. "License Mismatch",
+            // "Incorrect waybill number") instead of masking it as a generic
+            // 400 — makes future debugging much faster.
+            const bdError = shipment.Error ? shipment.Error[0] : null;
+            if (bdError) {
+                console.error('BlueDart returned an error node:', bdError);
+                return res.status(400).json({
+                    success: false,
+                    error: `BlueDart error: ${bdError}`,
+                    waybillNo: shipment.$?.WaybillNo || awbNo
+                });
+            }
+
             const tracking = {
                 awbNo: awbNo,
                 status: shipment.$?.Status || 'In Transit',
@@ -83,8 +108,8 @@ app.post('/api/track-bluedart', async (req, res) => {
             return res.json({ success: true, tracking, provider: 'bluedart' });
         }
 
-        return res.status(400).json({ 
-            success: false, 
+        return res.status(400).json({
+            success: false,
             error: 'AWB not found in BlueDart',
             rawResponse: response.data.substring(0, 500)
         });
@@ -102,7 +127,7 @@ app.post('/api/track-bluedart', async (req, res) => {
 app.post('/api/track-gati', async (req, res) => {
     try {
         const { docketNo } = req.body;
-        
+
         if (!docketNo) {
             return res.status(400).json({
                 success: false,
@@ -114,7 +139,7 @@ app.post('/api/track-gati', async (req, res) => {
         const authToken = process.env.GATI_AUTH_TOKEN || '357E89F08D4AFFE1';
 
         const url = `https://pg-uat.gati.com/pickupservices/GatiKWEDktJTrack.jsp?p1=${docketNo}&p2=${authToken}`;
-        
+
         console.log('GATI Request:', url);
 
         const response = await axios.get(url, {
@@ -145,7 +170,7 @@ app.post('/api/track-gati', async (req, res) => {
 app.post('/api/track-xpresion', async (req, res) => {
     try {
         const { awbNo } = req.body;
-        
+
         if (!awbNo) {
             return res.status(400).json({
                 success: false,
