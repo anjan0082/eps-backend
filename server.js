@@ -149,11 +149,39 @@ app.post('/api/track-gati', async (req, res) => {
             }
         });
 
+        console.log('GATI Raw Response:', response.data);
+
+        // BUG FIX: this used to ignore response.data entirely and always
+        // return a hardcoded { status: 'In Transit', location: 'GATI Network' }
+        // object, so every AWB — including ones that were never shipped via
+        // GATI at all (e.g. Xpresion-only AWBs) — came back as a fake
+        // "success" with fabricated GATI data. That masked real failures and
+        // stopped the frontend's BlueDart -> GATI -> Xpresion fallback chain
+        // from ever reaching Xpresion, which has the actual delivery status.
+        //
+        // GATI's tracking servlet returns plain text/HTML, not JSON, so we
+        // can't reliably decode a structured status from it — but we CAN
+        // tell whether it found a real record. Treat empty/error/"not
+        // found"-style responses as a miss and let the caller fall through
+        // to the next provider instead of lying about success.
+        const raw = (response.data || '').toString();
+        const noRecordPattern = /no record|not found|invalid|no data|does not exist/i;
+        const looksEmpty = raw.trim().length === 0;
+
+        if (looksEmpty || noRecordPattern.test(raw)) {
+            return res.status(404).json({
+                success: false,
+                error: 'AWB not found in GATI',
+                rawResponse: raw.substring(0, 500)
+            });
+        }
+
         const tracking = {
             docketNo: docketNo,
             status: 'In Transit',
             location: 'GATI Network',
-            message: 'Tracking via GATI'
+            message: 'Tracking via GATI',
+            rawResponse: raw.substring(0, 1000)
         };
 
         return res.json({ success: true, tracking, provider: 'gati' });
