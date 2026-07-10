@@ -27,11 +27,27 @@ module.exports = async (req, res) => {
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
 
+    // BUG FIX: same issue as server.js's /api/track-gati — this previously
+    // ignored response.data and always claimed success with fabricated
+    // "In Transit / GATI Network" data, even for AWBs GATI never shipped.
+    // Only treat it as a real hit if the response doesn't look like a
+    // not-found/error page.
+    const raw = (response.data || '').toString();
+    const noRecordPattern = /no record|not found|invalid|no data|does not exist/i;
+    if (raw.trim().length === 0 || noRecordPattern.test(raw)) {
+      return res.status(404).json({
+        success: false,
+        error: 'AWB not found in GATI',
+        rawResponse: raw.substring(0, 500)
+      });
+    }
+
     const tracking = {
       docketNo,
       status: 'In Transit',
       location: 'GATI Network',
-      message: 'Tracking information available'
+      message: 'Tracking information available',
+      rawResponse: raw.substring(0, 1000)
     };
 
     return res.json({ success: true, tracking });
