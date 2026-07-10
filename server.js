@@ -30,14 +30,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-// NOTE: /api/track-bluedart and /api/track-gati were removed from the
-// active flow. BlueDart credentials were unreliable (frequent "License
-// Mismatch" errors) and GATI's endpoint pointed at a UAT/test environment
-// that couldn't reliably report "not found" vs "found", which caused
-// tracking to show fabricated data. Xpresion already aggregates data from
-// both of those vendors (and others), so it's now the single source used
-// for public tracking.
-
 // Xpresion Tracking
 app.post('/api/track-xpresion', async (req, res) => {
     try {
@@ -68,15 +60,38 @@ app.post('/api/track-xpresion', async (req, res) => {
 
         console.log('Xpresion Raw Response:', JSON.stringify(response.data));
 
-        if (response.data && response.data.Data) {
+        const xpResponse = response.data && response.data.Response;
+        const trackingSummary = xpResponse && xpResponse.Tracking && xpResponse.Tracking[0];
+
+        if (xpResponse && xpResponse.ErrorCode === '0' && trackingSummary) {
+            const events = (xpResponse.Events || []).map(e => ({
+                date: e.EventDate1 || e.EventDate,
+                time: e.EventTime1 || e.EventTime,
+                location: e.Location,
+                status: e.Status
+            }));
+
             return res.json({
                 success: true,
-                tracking: response.data.Data[0],
-                provider: 'xpresion'
+                provider: 'xpresion',
+                tracking: {
+                    awbNo: trackingSummary.AWBNo,
+                    status: trackingSummary.Status,
+                    origin: trackingSummary.Origin,
+                    destination: trackingSummary.Destination,
+                    consignee: trackingSummary.Consignee,
+                    shipperName: trackingSummary.Shipper_Name,
+                    bookingDate: trackingSummary.BookingDate1 || trackingSummary.BookingDate,
+                    deliveryDate: trackingSummary.DeliveryDate1 || trackingSummary.DeliveryDate,
+                    events
+                }
             });
         }
 
-        return res.json({ success: false, error: 'AWB not found' });
+        return res.json({
+            success: false,
+            error: (xpResponse && xpResponse.ErrorDisc) || 'AWB not found'
+        });
     } catch (error) {
         console.error('Xpresion Error:', error.message);
         return res.status(500).json({
