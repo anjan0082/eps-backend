@@ -27,11 +27,6 @@ module.exports = async (req, res) => {
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
 
-    // BUG FIX: same issue as server.js's /api/track-gati — this previously
-    // ignored response.data and always claimed success with fabricated
-    // "In Transit / GATI Network" data, even for AWBs GATI never shipped.
-    // Only treat it as a real hit if the response doesn't look like a
-    // not-found/error page.
     const raw = (response.data || '').toString();
     const noRecordPattern = /no record|not found|invalid|no data|does not exist/i;
     if (raw.trim().length === 0 || noRecordPattern.test(raw)) {
