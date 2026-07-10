@@ -51,10 +51,6 @@ app.post('/api/track-bluedart', async (req, res) => {
         }
 
         const loginId = process.env.BLUEDART_LOGIN_ID || 'BOM05840';
-        // FIX: previous fallback key had two transposed characters
-        // ("...hffvoj...") which does not match the key BlueDart issued
-        // ("...hffovj..."). That mismatch was the root cause of the
-        // "License Mismatch" error whenever the env var wasn't set.
         const licenseKey = process.env.BLUEDART_LICENSE_KEY || 'nfjmmrtlhrotqhffovjfromhvtktvshr';
 
         const url = `https://api.bluedart.com/servlet/RoutingServlet?handler=tnt&action=custawbquery&loginid=${loginId}&awb=awb&numbers=${awbNo}&format=xml&lickey=${licenseKey}&verno=1.3&scan=0`;
@@ -77,13 +73,9 @@ app.post('/api/track-bluedart', async (req, res) => {
 
         console.log('BlueDart Parsed Result:', JSON.stringify(result, null, 2));
 
-        // Check for ShipmentData > Shipment (correct structure)
         if (result.ShipmentData && result.ShipmentData.Shipment) {
             const shipment = result.ShipmentData.Shipment[0];
 
-            // Surface BlueDart's own <Error> node (e.g. "License Mismatch",
-            // "Incorrect waybill number") instead of masking it as a generic
-            // 400 — makes future debugging much faster.
             const bdError = shipment.Error ? shipment.Error[0] : null;
             if (bdError) {
                 console.error('BlueDart returned an error node:', bdError);
@@ -151,19 +143,6 @@ app.post('/api/track-gati', async (req, res) => {
 
         console.log('GATI Raw Response:', response.data);
 
-        // BUG FIX: this used to ignore response.data entirely and always
-        // return a hardcoded { status: 'In Transit', location: 'GATI Network' }
-        // object, so every AWB — including ones that were never shipped via
-        // GATI at all (e.g. Xpresion-only AWBs) — came back as a fake
-        // "success" with fabricated GATI data. That masked real failures and
-        // stopped the frontend's BlueDart -> GATI -> Xpresion fallback chain
-        // from ever reaching Xpresion, which has the actual delivery status.
-        //
-        // GATI's tracking servlet returns plain text/HTML, not JSON, so we
-        // can't reliably decode a structured status from it — but we CAN
-        // tell whether it found a real record. Treat empty/error/"not
-        // found"-style responses as a miss and let the caller fall through
-        // to the next provider instead of lying about success.
         const raw = (response.data || '').toString();
         const noRecordPattern = /no record|not found|invalid|no data|does not exist/i;
         const looksEmpty = raw.trim().length === 0;
@@ -206,19 +185,9 @@ app.post('/api/track-xpresion', async (req, res) => {
             });
         }
 
-        // These match Xpresion's own working curl example for this
-        // endpoint - CARD / A2F61EDB3E are real production credentials
-        // (not placeholders), which is why calls were still failing even
-        // with them: the request body shape was wrong, not the auth.
         const userId = process.env.XPRESION_USER_ID || 'CARD';
         const password = process.env.XPRESION_PASSWORD || 'A2F61EDB3E';
 
-        // BUG FIX: the payload previously sent "AWB" as the field name and
-        // included "Fromdate"/"Todate", neither of which match Xpresion's
-        // actual API contract. Xpresion's confirmed working curl example
-        // uses "AWBNo" plus "ShowAllFields"/"RequiredUrl" - the mismatched
-        // field name meant Xpresion likely never recognized the AWB being
-        // queried at all, regardless of whether credentials were valid.
         const payload = {
             UserID: userId,
             Password: password,
