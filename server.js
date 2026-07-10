@@ -206,21 +206,33 @@ app.post('/api/track-xpresion', async (req, res) => {
             });
         }
 
+        // These match Xpresion's own working curl example for this
+        // endpoint - CARD / A2F61EDB3E are real production credentials
+        // (not placeholders), which is why calls were still failing even
+        // with them: the request body shape was wrong, not the auth.
         const userId = process.env.XPRESION_USER_ID || 'CARD';
         const password = process.env.XPRESION_PASSWORD || 'A2F61EDB3E';
 
+        // BUG FIX: the payload previously sent "AWB" as the field name and
+        // included "Fromdate"/"Todate", neither of which match Xpresion's
+        // actual API contract. Xpresion's confirmed working curl example
+        // uses "AWBNo" plus "ShowAllFields"/"RequiredUrl" - the mismatched
+        // field name meant Xpresion likely never recognized the AWB being
+        // queried at all, regardless of whether credentials were valid.
         const payload = {
             UserID: userId,
             Password: password,
-            AWB: awbNo,
-            Fromdate: '',
-            Todate: ''
+            AWBNo: awbNo,
+            ShowAllFields: 'Yes',
+            RequiredUrl: 'Yes'
         };
 
         const response = await axios.post('https://epsm.xpresion.in/api/v1/Tracking/Tracking', payload, {
             timeout: 5000,
             headers: { 'Content-Type': 'application/json' }
         });
+
+        console.log('Xpresion Raw Response:', JSON.stringify(response.data));
 
         if (response.data && response.data.Data) {
             return res.json({
