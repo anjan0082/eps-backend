@@ -11,14 +11,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Startup check — warn loudly if BlueDart credentials aren't coming from
-// real environment variables. Relying on the hardcoded fallbacks below is
-// what caused the "License Mismatch" bug (the old fallback had a typo'd key).
-if (!process.env.BLUEDART_LOGIN_ID || !process.env.BLUEDART_LICENSE_KEY) {
-    console.warn('⚠️  BLUEDART_LOGIN_ID / BLUEDART_LICENSE_KEY not set as environment variables.');
-    console.warn('⚠️  Falling back to hardcoded defaults — set these in Vercel Project Settings > Environment Variables for Production.');
-}
-
 // Root route
 app.get('/', (req, res) => {
     res.json({
@@ -33,145 +25,18 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'OK',
         service: 'EPS Worldwide Backend',
-        providers: ['bluedart', 'gati', 'xpresion'],
+        providers: ['xpresion'],
         timestamp: new Date().toISOString()
     });
 });
 
-// BlueDart Tracking
-app.post('/api/track-bluedart', async (req, res) => {
-    try {
-        const { awbNo } = req.body;
-
-        if (!awbNo) {
-            return res.status(400).json({
-                success: false,
-                error: 'AWB number is required'
-            });
-        }
-
-        const loginId = process.env.BLUEDART_LOGIN_ID || 'BOM05840';
-        const licenseKey = process.env.BLUEDART_LICENSE_KEY || 'nfjmmrtlhrotqhffovjfromhvtktvshr';
-
-        const url = `https://api.bluedart.com/servlet/RoutingServlet?handler=tnt&action=custawbquery&loginid=${loginId}&awb=awb&numbers=${awbNo}&format=xml&lickey=${licenseKey}&verno=1.3&scan=0`;
-
-        console.log('BlueDart Request URL:', url);
-
-        const response = await axios.get(url, {
-            timeout: 10000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                'Accept': 'application/xml',
-                'Connection': 'keep-alive'
-            }
-        });
-
-        console.log('BlueDart Raw Response:', response.data);
-
-        const parser = new xml2js.Parser();
-        const result = await parser.parseStringPromise(response.data);
-
-        console.log('BlueDart Parsed Result:', JSON.stringify(result, null, 2));
-
-        if (result.ShipmentData && result.ShipmentData.Shipment) {
-            const shipment = result.ShipmentData.Shipment[0];
-
-            const bdError = shipment.Error ? shipment.Error[0] : null;
-            if (bdError) {
-                console.error('BlueDart returned an error node:', bdError);
-                return res.status(400).json({
-                    success: false,
-                    error: `BlueDart error: ${bdError}`,
-                    waybillNo: shipment.$?.WaybillNo || awbNo
-                });
-            }
-
-            const tracking = {
-                awbNo: awbNo,
-                status: shipment.$?.Status || 'In Transit',
-                receiverName: shipment.Receiver ? shipment.Receiver[0] : 'N/A',
-                currentLocation: shipment.CurrentLocation ? shipment.CurrentLocation[0] : 'N/A',
-                service: shipment.Service ? shipment.Service[0] : 'N/A',
-                origin: shipment.Origin ? shipment.Origin[0] : 'N/A',
-                destination: shipment.Destination ? shipment.Destination[0] : 'N/A',
-                events: []
-            };
-
-            return res.json({ success: true, tracking, provider: 'bluedart' });
-        }
-
-        return res.status(400).json({
-            success: false,
-            error: 'AWB not found in BlueDart',
-            rawResponse: response.data.substring(0, 500)
-        });
-    } catch (error) {
-        console.error('BlueDart Error:', error.message);
-        console.error('BlueDart Error Details:', error);
-        return res.status(400).json({
-            success: false,
-            error: 'Error tracking with BlueDart: ' + error.message
-        });
-    }
-});
-
-// GATI Tracking
-app.post('/api/track-gati', async (req, res) => {
-    try {
-        const { docketNo } = req.body;
-
-        if (!docketNo) {
-            return res.status(400).json({
-                success: false,
-                error: 'Docket number is required'
-            });
-        }
-
-        const custCode = process.env.GATI_CUST_CODE || '87654321';
-        const authToken = process.env.GATI_AUTH_TOKEN || '357E89F08D4AFFE1';
-
-        const url = `https://pg-uat.gati.com/pickupservices/GatiKWEDktJTrack.jsp?p1=${docketNo}&p2=${authToken}`;
-
-        console.log('GATI Request:', url);
-
-        const response = await axios.get(url, {
-            timeout: 5000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0'
-            }
-        });
-
-        console.log('GATI Raw Response:', response.data);
-
-        const raw = (response.data || '').toString();
-        const noRecordPattern = /no record|not found|invalid|no data|does not exist/i;
-        const looksEmpty = raw.trim().length === 0;
-
-        if (looksEmpty || noRecordPattern.test(raw)) {
-            return res.status(404).json({
-                success: false,
-                error: 'AWB not found in GATI',
-                rawResponse: raw.substring(0, 500)
-            });
-        }
-
-        const tracking = {
-            docketNo: docketNo,
-            status: 'In Transit',
-            location: 'GATI Network',
-            message: 'Tracking via GATI',
-            rawResponse: raw.substring(0, 1000)
-        };
-
-        return res.json({ success: true, tracking, provider: 'gati' });
-    } catch (error) {
-        console.error('GATI Error:', error.message);
-        return res.status(500).json({
-            success: false,
-            error: 'Error tracking with GATI: ' + error.message
-        });
-    }
-});
+// NOTE: /api/track-bluedart and /api/track-gati were removed from the
+// active flow. BlueDart credentials were unreliable (frequent "License
+// Mismatch" errors) and GATI's endpoint pointed at a UAT/test environment
+// that couldn't reliably report "not found" vs "found", which caused
+// tracking to show fabricated data. Xpresion already aggregates data from
+// both of those vendors (and others), so it's now the single source used
+// for public tracking.
 
 // Xpresion Tracking
 app.post('/api/track-xpresion', async (req, res) => {
