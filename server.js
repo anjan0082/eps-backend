@@ -30,6 +30,15 @@ app.get('/health', (req, res) => {
     });
 });
 
+// NOTE: /api/track-bluedart and /api/track-gati were removed from the
+// active flow. BlueDart credentials were unreliable (frequent "License
+// Mismatch" errors) and GATI's endpoint pointed at a UAT/test environment
+// that couldn't reliably report "not found" vs "found", which caused
+// tracking to show fabricated data. Xpresion already aggregates data from
+// both of those vendors (and others), so it's now the single source used
+// for public tracking. The old route handlers are preserved in git history
+// if they're ever needed again.
+
 // Xpresion Tracking
 app.post('/api/track-xpresion', async (req, res) => {
     try {
@@ -42,9 +51,19 @@ app.post('/api/track-xpresion', async (req, res) => {
             });
         }
 
+        // These match Xpresion's own working curl example for this
+        // endpoint - CARD / A2F61EDB3E are real production credentials
+        // (not placeholders), which is why calls were still failing even
+        // with them: the request body shape was wrong, not the auth.
         const userId = process.env.XPRESION_USER_ID || 'CARD';
         const password = process.env.XPRESION_PASSWORD || 'A2F61EDB3E';
 
+        // BUG FIX: the payload previously sent "AWB" as the field name and
+        // included "Fromdate"/"Todate", neither of which match Xpresion's
+        // actual API contract. Xpresion's confirmed working curl example
+        // uses "AWBNo" plus "ShowAllFields"/"RequiredUrl" - the mismatched
+        // field name meant Xpresion likely never recognized the AWB being
+        // queried at all, regardless of whether credentials were valid.
         const payload = {
             UserID: userId,
             Password: password,
@@ -60,6 +79,13 @@ app.post('/api/track-xpresion', async (req, res) => {
 
         console.log('Xpresion Raw Response:', JSON.stringify(response.data));
 
+        // BUG FIX: this used to check response.data.Data, but Xpresion's
+        // real response shape nests everything under response.data.Response
+        // instead - { Response: { ErrorCode, Tracking: [...], Events: [...],
+        // AdditionalData: [...], ... } }. There is no top-level "Data" field
+        // at all, so this check always failed and reported "AWB not found"
+        // even when Xpresion had valid, complete tracking data (confirmed
+        // via a direct curl test against the same endpoint/credentials).
         const xpResponse = response.data && response.data.Response;
         const trackingSummary = xpResponse && xpResponse.Tracking && xpResponse.Tracking[0];
 
