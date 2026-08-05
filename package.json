@@ -1,12 +1,12 @@
 {
   "name": "eps-worldwide-backend",
   "version": "1.0.0",
-  "description": "EPS Worldwide Backend API - GATI & Xpresion Tracking Integration",
+  "description": "EPS Worldwide Backend API - Xpresion Tracking Integration",
   "scripts": {
-    "start": "node server-gati.js",
-    "dev": "nodemon server-gati.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
-  "keywords": ["logistics", "tracking", "gati", "xpresion", "courier"],
+  "keywords": ["logistics", "tracking", "xpresion", "courier"],
   "author": "EPS Worldwide",
   "license": "MIT",
   "dependencies": {
@@ -14,7 +14,9 @@
     "cors": "^2.8.5",
     "axios": "^1.4.0",
     "dotenv": "^16.0.3",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "cheerio": "^1.0.0",
+    "@supabase/supabase-js": "^2.45.4"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"
